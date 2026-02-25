@@ -1,0 +1,39 @@
+version: "3.8"
+
+# ============================================================
+# V2Board Docker Compose
+# 仅包含 v2board 服务，MySQL / Redis / 外部 Nginx 均使用已有服务
+# ============================================================
+
+services:
+  v2board:
+    image: ghcr.io/shannon-x/v2board:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: v2board
+    restart: unless-stopped
+    ports:
+      - "${V2BOARD_PORT:-7680}:80"
+    volumes:
+      - ./.env:/var/www/v2board/.env:ro
+      - v2board-logs:/var/www/v2board/storage/logs
+    environment:
+      - TZ=Asia/Shanghai
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    # 如果 MySQL/Redis 在同一台宿主机的 Docker 中运行，
+    # 取消下方注释并替换为实际网络名
+    # networks:
+    #   - 1panel-network
+
+volumes:
+  v2board-logs:
+    driver: local
+
+# networks:
+#   1panel-network:
+#     external: true
