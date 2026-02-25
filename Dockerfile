@@ -2,6 +2,7 @@
 # V2Board — Workerman (AdapterMan) 高性能单容器镜像
 # 内部进程：Workerman(:6600) + Nginx(:80 反代) + Horizon(队列)
 # 外部依赖：MySQL · Redis · (可选)外部 Nginx/CDN
+# 支持架构：linux/amd64, linux/arm64
 # ============================================================
 
 # ---------- Stage 1: composer 依赖 ----------
@@ -9,7 +10,12 @@ FROM composer:2 AS vendor
 
 WORKDIR /build
 COPY composer.json ./
-RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --ignore-platform-reqs
+RUN composer install \
+        --no-dev \
+        --no-scripts \
+        --no-autoloader \
+        --prefer-dist \
+        --ignore-platform-reqs
 
 # ---------- Stage 2: 运行时镜像 ----------
 FROM php:8.1-cli-bookworm
@@ -19,7 +25,9 @@ LABEL maintainer="Shannon-x" \
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# 系统依赖 —— 分层安装便于缓存
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
         nginx \
         supervisor \
         logrotate \
@@ -33,8 +41,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libxml2-dev \
         libcurl4-openssl-dev \
         libsodium-dev \
-        libigbinary-dev \
-    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# PHP 扩展
+RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install -j"$(nproc)" \
         pdo_mysql \
         mysqli \
@@ -47,18 +57,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         posix \
         opcache \
         fileinfo \
-        xml \
-    && pecl install igbinary redis \
-    && docker-php-ext-enable igbinary redis \
-    && apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false \
-    && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+        xml
 
-# 复制项目文件
+# PECL 扩展（igbinary 必须在 redis 之前，redis 编译时依赖它）
+RUN pecl install igbinary \
+    && docker-php-ext-enable igbinary \
+    && pecl install --configureoptions 'enable-redis-igbinary="yes"' redis \
+    && docker-php-ext-enable redis
+
+# 清理构建缓存
+RUN apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# ---------- 应用代码 ----------
 WORKDIR /var/www/v2board
+
 COPY --from=vendor /build/vendor ./vendor
 COPY . .
 
-# 生成优化的自动加载
 RUN php vendor/bin/composer dump-autoload --optimize --no-dev 2>/dev/null || true \
     && php artisan package:discover --ansi 2>/dev/null || true
 
@@ -68,21 +85,20 @@ RUN mkdir -p storage/logs storage/framework/{cache,sessions,views} bootstrap/cac
     && chmod -R 775 storage bootstrap/cache
 
 # 配置文件
-COPY docker/nginx.conf        /etc/nginx/sites-available/default
+COPY docker/nginx.conf         /etc/nginx/sites-available/default
 COPY docker/supervisord.conf   /etc/supervisor/conf.d/v2board.conf
 COPY docker/php.ini            /usr/local/etc/php/conf.d/99-v2board.ini
 COPY docker/logrotate.conf     /etc/logrotate.d/v2board
 COPY docker/entrypoint.sh      /entrypoint.sh
-RUN chmod +x /entrypoint.sh
 
-# Nginx: 移除默认站点，避免冲突
-RUN rm -f /etc/nginx/sites-enabled/default \
+RUN chmod +x /entrypoint.sh \
+    && rm -f /etc/nginx/sites-enabled/default \
     && ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
 
 EXPOSE 80
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD curl -sf http://127.0.0.1/api/v1/guest/comm/config || exit 1
+    CMD curl -sf http://127.0.0.1/ -o /dev/null || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["supervisord", "-n", "-c", "/etc/supervisor/supervisord.conf"]
