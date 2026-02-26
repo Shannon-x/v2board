@@ -10,10 +10,10 @@ FROM composer:2 AS vendor
 
 WORKDIR /build
 COPY composer.json ./
+COPY . .
 RUN composer install \
         --no-dev \
-        --no-scripts \
-        --no-autoloader \
+        --optimize-autoloader \
         --prefer-dist \
         --ignore-platform-reqs
 
@@ -73,11 +73,10 @@ RUN apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false
 # ---------- 应用代码 ----------
 WORKDIR /var/www/v2board
 
-COPY --from=vendor /build/vendor ./vendor
 COPY . .
+COPY --from=vendor /build/vendor ./vendor
 
-RUN php vendor/bin/composer dump-autoload --optimize --no-dev 2>/dev/null || true \
-    && php artisan package:discover --ansi 2>/dev/null || true
+RUN php artisan package:discover --ansi 2>/dev/null || true
 
 # 目录权限
 RUN mkdir -p storage/logs storage/framework/{cache,sessions,views} bootstrap/cache \

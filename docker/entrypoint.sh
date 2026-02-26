@@ -1,5 +1,5 @@
 #!/bin/bash
-set -euo pipefail
+set -uo pipefail
 
 APP_DIR="/var/www/v2board"
 DATA_DIR="${APP_DIR}/data"
@@ -32,7 +32,7 @@ else
         exit 1
     fi
 
-    # 用 docker-compose 传入的环境变量覆盖 .env 中的值
+    # 用 docker-compose / docker run -e 传入的环境变量覆盖 .env 中的值
     override_env() {
         local key="$1"
         local val="${!key:-}"
@@ -42,6 +42,7 @@ else
             else
                 echo "${key}=${val}" >> "${DATA_DIR}/.env"
             fi
+            log "  覆盖: ${key}"
         fi
     }
     for key in APP_NAME APP_ENV APP_KEY APP_DEBUG APP_URL \
@@ -55,18 +56,22 @@ else
     log ".env 已生成到 data/.env — 如需修改请编辑 data/.env 后重启容器"
 fi
 
-# 首次运行若无 APP_KEY 则自动生成
-if ! grep -qE '^APP_KEY=.+' "${DATA_DIR}/.env"; then
-    php artisan key:generate --force 2>/dev/null
-    log "已自动生成 APP_KEY"
-fi
-
 # ── 目录 & 权限 ────────────────────────────────────────────
 mkdir -p storage/logs \
          storage/framework/{cache,sessions,views} \
          bootstrap/cache
 chown -R www-data:www-data storage bootstrap/cache data
 chmod -R 775 storage bootstrap/cache
+
+# 首次运行若无 APP_KEY 则自动生成
+if ! grep -qE '^APP_KEY=base64:.+' "${DATA_DIR}/.env"; then
+    log "APP_KEY 为空，正在生成 ..."
+    if php artisan key:generate --force 2>&1; then
+        log "APP_KEY 已生成"
+    else
+        log "WARN: key:generate 失败，请手动执行"
+    fi
+fi
 
 # ── 等待外部服务就绪 ───────────────────────────────────────
 wait_for_tcp() {
@@ -95,14 +100,13 @@ wait_for_tcp "$DB_HOST"        "$DB_PORT"        "MySQL"
 wait_for_tcp "$REDIS_HOST_VAL" "$REDIS_PORT_VAL" "Redis"
 
 # ── Laravel 初始化 ─────────────────────────────────────────
-log "执行 Laravel 初始化 ..."
+log "执行数据库迁移 ..."
+php artisan migrate --force 2>&1 | while IFS= read -r line; do log "  migrate: $line"; done || true
 
-php artisan migrate --force 2>&1 | while IFS= read -r line; do log "migrate: $line"; done || true
-
-php artisan config:cache  2>/dev/null || true
-php artisan route:cache   2>/dev/null || true
-php artisan view:cache    2>/dev/null || true
+log "缓存配置 ..."
+php artisan config:cache  2>&1 || true
+php artisan route:cache   2>&1 || true
+php artisan view:cache    2>&1 || true
 
 log "初始化完成，启动服务 ..."
-
 exec "$@"
