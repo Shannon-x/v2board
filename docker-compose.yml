@@ -1,26 +1,6 @@
-version: "3.8"
-
-# ============================================================
-# V2Board Docker Compose
-# 仅包含 v2board 服务，MySQL / Redis / 外部 Nginx 均使用已有服务
-#
-# 使用方法（二选一）：
-#
-#   方式 A — 用 .env 文件：
-#     cp .env.example .env && vim .env && docker compose up -d
-#
-#   方式 B — 用环境变量（无需 .env 文件）：
-#     DB_HOST=mysql DB_DATABASE=v2board ... docker compose up -d
-#
-# 首次启动自动完成：导入表结构 → 创建管理员 → 输出账号密码到日志
-# ============================================================
-
 services:
   v2board:
     image: ghcr.io/shannon-x/v2board:latest
-    build:
-      context: .
-      dockerfile: Dockerfile
     container_name: v2board
     restart: unless-stopped
     ports:
@@ -29,35 +9,21 @@ services:
       - ./data:/var/www/v2board/data
       - v2board-logs:/var/www/v2board/storage/logs
     env_file:
-      - path: .env
-        required: false
+      - .env
     environment:
-      - TZ=Asia/Shanghai
-      # 取消注释以下变量即可覆盖 .env 中的默认值
-      # - DB_HOST=mysql-container
-      # - DB_PORT=3306
-      # - DB_DATABASE=v2board
-      # - DB_USERNAME=v2board
-      # - DB_PASSWORD=changeme
-      # - REDIS_HOST=redis-container
-      # - REDIS_PORT=6379
-      # - REDIS_PASSWORD=changeme
-      # - ADMIN_EMAIL=admin@example.com
-      # - ADMIN_PASSWORD=your_secure_password
+      - TZ=${TZ:-Asia/Shanghai}
     logging:
       driver: json-file
       options:
         max-size: "20m"
         max-file: "5"
-    # 如果 MySQL/Redis 在同一台宿主机的 Docker 中运行，
-    # 取消下方注释并替换为实际网络名
-    # networks:
-    #   - 1panel-network
+    networks:
+      - v2board-network
 
 volumes:
   v2board-logs:
-    driver: local
 
-# networks:
-#   1panel-network:
-#     external: true
+networks:
+  v2board-network:
+    name: ${DOCKER_NETWORK:-1panel-network}
+    external: true
