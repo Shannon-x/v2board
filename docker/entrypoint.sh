@@ -3,84 +3,74 @@ set -uo pipefail
 
 APP_DIR="/var/www/v2board"
 DATA_DIR="${APP_DIR}/data"
+INSTALL_LOCK="${DATA_DIR}/.installed"
 cd "$APP_DIR"
 
 log() { echo "[entrypoint $(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
 # ── .env 处理 ──────────────────────────────────────────────
-# 优先级：data/.env（持久卷） > 已有 .env > .env.example 模板
 mkdir -p "$DATA_DIR"
 
-# Docker 对不存在的文件做 bind mount 会创建空目录，清理掉
 if [ -d "${APP_DIR}/.env" ]; then
     rm -rf "${APP_DIR}/.env"
 fi
 
 if [ -f "${DATA_DIR}/.env" ]; then
     ln -sf "${DATA_DIR}/.env" "${APP_DIR}/.env"
-    log ".env 已从 data/.env 加载（持久化）"
+    log ".env 已从 data/.env 加载"
 elif [ -f "${APP_DIR}/.env" ] && [ -s "${APP_DIR}/.env" ]; then
     cp "${APP_DIR}/.env" "${DATA_DIR}/.env"
     ln -sf "${DATA_DIR}/.env" "${APP_DIR}/.env"
-    log ".env 已复制到 data/ 并建立链接"
+    log ".env 已复制到 data/"
 else
     if [ -f "${APP_DIR}/.env.example" ]; then
         cp "${APP_DIR}/.env.example" "${DATA_DIR}/.env"
         log "已从 .env.example 创建 .env"
     else
-        log "ERROR: 未找到 .env.example 模板"
+        log "ERROR: 未找到 .env.example"
         exit 1
     fi
-
-    # 用 docker-compose / docker run -e 传入的环境变量覆盖 .env 中的值
-    override_env() {
-        local key="$1"
-        local val="${!key:-}"
-        if [ -n "$val" ]; then
-            if grep -qE "^${key}=" "${DATA_DIR}/.env"; then
-                sed -i "s|^${key}=.*|${key}=${val}|" "${DATA_DIR}/.env"
-            else
-                echo "${key}=${val}" >> "${DATA_DIR}/.env"
-            fi
-            log "  覆盖: ${key}"
-        fi
-    }
-    for key in APP_NAME APP_ENV APP_KEY APP_DEBUG APP_URL \
-               DB_HOST DB_PORT DB_DATABASE DB_USERNAME DB_PASSWORD \
-               REDIS_HOST REDIS_PASSWORD REDIS_PORT \
-               CACHE_DRIVER QUEUE_CONNECTION SESSION_DRIVER; do
-        override_env "$key"
-    done
-
     ln -sf "${DATA_DIR}/.env" "${APP_DIR}/.env"
-    log ".env 已生成到 data/.env — 如需修改请编辑 data/.env 后重启容器"
 fi
 
+# 用环境变量覆盖 .env（仅首次生成或每次启动都可刷新）
+override_env() {
+    local key="$1" val="${!key:-}"
+    if [ -n "$val" ]; then
+        if grep -qE "^${key}=" "${DATA_DIR}/.env"; then
+            sed -i "s|^${key}=.*|${key}=${val}|" "${DATA_DIR}/.env"
+        else
+            echo "${key}=${val}" >> "${DATA_DIR}/.env"
+        fi
+    fi
+}
+for key in APP_NAME APP_ENV APP_KEY APP_DEBUG APP_URL \
+           DB_HOST DB_PORT DB_DATABASE DB_USERNAME DB_PASSWORD \
+           REDIS_HOST REDIS_PASSWORD REDIS_PORT \
+           CACHE_DRIVER QUEUE_CONNECTION SESSION_DRIVER \
+           ADMIN_EMAIL ADMIN_PASSWORD; do
+    override_env "$key"
+done
+
 # ── 目录 & 权限 ────────────────────────────────────────────
-mkdir -p storage/logs \
-         storage/framework/{cache,sessions,views} \
-         bootstrap/cache
+mkdir -p storage/logs storage/framework/{cache,sessions,views} bootstrap/cache
 chown -R www-data:www-data storage bootstrap/cache data
 chmod -R 775 storage bootstrap/cache
 
-# 首次运行若无 APP_KEY 则自动生成
+# ── APP_KEY ────────────────────────────────────────────────
 if ! grep -qE '^APP_KEY=base64:.+' "${DATA_DIR}/.env"; then
-    log "APP_KEY 为空，正在生成 ..."
-    if php artisan key:generate --force 2>&1; then
-        log "APP_KEY 已生成"
-    else
-        log "WARN: key:generate 失败，请手动执行"
-    fi
+    log "生成 APP_KEY ..."
+    php artisan key:generate --force 2>&1 || log "WARN: key:generate 失败"
 fi
 
-# ── 等待外部服务就绪 ───────────────────────────────────────
+# ── 等待外部服务 ───────────────────────────────────────────
 wait_for_tcp() {
     local host="$1" port="$2" label="$3" max=30 i=0
     log "等待 ${label} (${host}:${port}) ..."
     while ! php -r "if(!@fsockopen('${host}',${port},\$e,\$m,2))exit(1);" 2>/dev/null; do
         i=$((i + 1))
         if [ "$i" -ge "$max" ]; then
-            log "ERROR: ${label} 连接超时 (${max}s)"
+            log "ERROR: ${label} 连接超时"
             exit 1
         fi
         sleep 1
@@ -88,21 +78,57 @@ wait_for_tcp() {
     log "${label} 已就绪"
 }
 
-# 从 .env 文件读取连接信息
-_read_env() { grep -E "^${1}=" "${DATA_DIR}/.env" 2>/dev/null | head -1 | cut -d'=' -f2- | tr -d '[:space:]"'"'" || echo "$2"; }
+_read_env() {
+    grep -E "^${1}=" "${DATA_DIR}/.env" 2>/dev/null | head -1 | cut -d'=' -f2- | tr -d '[:space:]"'"'" || echo "$2"
+}
 
-DB_HOST=$(_read_env DB_HOST "localhost")
-DB_PORT=$(_read_env DB_PORT "3306")
-REDIS_HOST_VAL=$(_read_env REDIS_HOST "127.0.0.1")
-REDIS_PORT_VAL=$(_read_env REDIS_PORT "6379")
+wait_for_tcp "$(_read_env DB_HOST localhost)"    "$(_read_env DB_PORT 3306)"  "MySQL"
+wait_for_tcp "$(_read_env REDIS_HOST 127.0.0.1)" "$(_read_env REDIS_PORT 6379)" "Redis"
 
-wait_for_tcp "$DB_HOST"        "$DB_PORT"        "MySQL"
-wait_for_tcp "$REDIS_HOST_VAL" "$REDIS_PORT_VAL" "Redis"
+# ── 自动安装（替代 php artisan v2board:install）──────────────
+if [ ! -f "$INSTALL_LOCK" ]; then
+    log "========== 首次安装 =========="
 
-# ── Laravel 初始化 ─────────────────────────────────────────
-log "执行数据库迁移 ..."
-php artisan migrate --force 2>&1 | while IFS= read -r line; do log "  migrate: $line"; done || true
+    # 1) 导入数据库结构
+    log "导入数据库表结构 ..."
+    if php artisan v2board:db-import 2>&1; then
+        log "数据库导入完成"
+    else
+        log "ERROR: 数据库导入失败"
+        exit 1
+    fi
 
+    # 2) 创建管理员
+    ADMIN_EMAIL=$(_read_env ADMIN_EMAIL "admin@v2board.com")
+    ADMIN_PASSWORD=$(_read_env ADMIN_PASSWORD "")
+
+    if [ -z "$ADMIN_PASSWORD" ] || [ ${#ADMIN_PASSWORD} -lt 8 ]; then
+        ADMIN_PASSWORD=$(head -c 16 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 16)
+        log "ADMIN_PASSWORD 未设置或少于8位，已自动生成"
+    fi
+
+    log "创建管理员账号 ..."
+    if php artisan v2board:admin-create --email="$ADMIN_EMAIL" --password="$ADMIN_PASSWORD" 2>&1; then
+        SECURE_PATH=$(php artisan v2board:admin-path 2>/dev/null || echo "unknown")
+        log "=================================="
+        log "  管理员邮箱: ${ADMIN_EMAIL}"
+        log "  管理员密码: ${ADMIN_PASSWORD}"
+        log "  后台路径:   /${SECURE_PATH}"
+        log "=================================="
+    else
+        log "ERROR: 管理员创建失败"
+        exit 1
+    fi
+
+    echo "installed at $(date)" > "$INSTALL_LOCK"
+    log "========== 安装完成 =========="
+else
+    log "已安装，跳过初始化"
+    # 非首次启动仍执行迁移（可能有表结构更新）
+    php artisan migrate --force 2>&1 | while IFS= read -r line; do log "  migrate: $line"; done || true
+fi
+
+# ── 缓存 ──────────────────────────────────────────────────
 log "缓存配置 ..."
 php artisan config:cache  2>&1 || true
 php artisan route:cache   2>&1 || true
