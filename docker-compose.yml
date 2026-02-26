@@ -5,7 +5,7 @@ version: "3.8"
 # 仅包含 v2board 服务，MySQL / Redis / 外部 Nginx 均使用已有服务
 #
 # 使用方法：
-#   1. cp .env.docker .env        ← 复制模板
+#   1. cp .env.example .env       ← 复制模板
 #   2. vim .env                   ← 修改数据库/Redis 连接信息
 #   3. docker compose up -d       ← 启动
 # ============================================================

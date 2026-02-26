@@ -8,10 +8,10 @@ cd "$APP_DIR"
 log() { echo "[entrypoint $(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
 # ── .env 处理 ──────────────────────────────────────────────
-# 优先级：data/.env（持久卷） > 环境变量自动生成 > .env.docker 模板 > .env.example
+# 优先级：data/.env（持久卷） > 已有 .env > .env.example 模板
 mkdir -p "$DATA_DIR"
 
-# 如果挂载点意外变成目录（Docker 对不存在的文件会创建目录），清理它
+# Docker 对不存在的文件做 bind mount 会创建空目录，清理掉
 if [ -d "${APP_DIR}/.env" ]; then
     rm -rf "${APP_DIR}/.env"
 fi
@@ -24,19 +24,11 @@ elif [ -f "${APP_DIR}/.env" ] && [ -s "${APP_DIR}/.env" ]; then
     ln -sf "${DATA_DIR}/.env" "${APP_DIR}/.env"
     log ".env 已复制到 data/ 并建立链接"
 else
-    # 从环境变量或模板生成 .env
-    TEMPLATE=""
-    if [ -f "${APP_DIR}/.env.docker" ]; then
-        TEMPLATE="${APP_DIR}/.env.docker"
-    elif [ -f "${APP_DIR}/.env.example" ]; then
-        TEMPLATE="${APP_DIR}/.env.example"
-    fi
-
-    if [ -n "$TEMPLATE" ]; then
-        cp "$TEMPLATE" "${DATA_DIR}/.env"
-        log "已从 $(basename "$TEMPLATE") 创建 .env"
+    if [ -f "${APP_DIR}/.env.example" ]; then
+        cp "${APP_DIR}/.env.example" "${DATA_DIR}/.env"
+        log "已从 .env.example 创建 .env"
     else
-        log "ERROR: 未找到任何 .env 模板文件"
+        log "ERROR: 未找到 .env.example 模板"
         exit 1
     fi
 

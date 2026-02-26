@@ -23,7 +23,6 @@ phpunit.xml
 
 *.md
 LICENSE
-Dockerfile.webman
 docker-compose.yml
 Homestead.json
 Homestead.yaml
