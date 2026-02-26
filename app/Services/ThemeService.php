@@ -37,12 +37,12 @@ class ThemeService
             abort(500, '请检查V2Board目录权限');
         }
 
+        $freshConfig = include base_path("config/theme/{$this->theme}.php");
+        app('config')->set("theme.{$this->theme}", $freshConfig);
         try {
             Artisan::call('config:cache');
-            $freshConfig = include base_path("config/theme/{$this->theme}.php");
-            app('config')->set("theme.{$this->theme}", $freshConfig);
         } catch (\Exception $e) {
-            abort(500, "{$this->theme}初始化失败");
+            // Workerman 常驻进程中 config:cache 可能失败，不影响运行
         }
     }
 }

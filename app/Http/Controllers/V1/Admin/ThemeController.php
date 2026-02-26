@@ -77,11 +77,11 @@ class ThemeController extends Controller
             abort(500, '修改失败');
         }
 
+        app('config')->set("theme.{$payload['name']}", $config);
         try {
             Artisan::call('config:cache');
-            app('config')->set("theme.{$payload['name']}", $config);
         } catch (\Exception $e) {
-            abort(500, '保存失败');
+            // Workerman 常驻进程中 config:cache 可能失败，不影响运行
         }
 
         return response([

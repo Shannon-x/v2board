@@ -128,16 +128,28 @@ if [ ! -f "$INSTALL_LOCK" ]; then
     log "========== 安装完成 =========="
 else
     log "已安装，跳过初始化"
-    php artisan migrate --force 2>&1 | while IFS= read -r line; do log "  migrate: $line"; done || true
+    log "执行数据库迁移 ..."
+    php artisan migrate --force 2>&1 || log "WARN: migrate 有错误（可能是表已存在），已忽略"
 fi
 
-# ── 同步 .env 到系统环境变量 ─────────────────────────────────
+# ── 同步 .env 关键变量到系统环境 ──────────────────────────────
 # Docker --env-file 会把空值（如 APP_KEY=）设为系统环境变量，
 # 导致 DotEnv (createImmutable) 不从文件覆盖。
-# 必须在 config:cache 之前将 .env 文件内容 export 到系统环境。
-set -a
-source "${DATA_DIR}/.env" 2>/dev/null || true
-set +a
+# 不能用 source .env —— 密码等值含 $ 会被 bash 展开并出错。
+# 改为逐行安全 export，只处理 config:cache 依赖的核心变量。
+while IFS='=' read -r _key _val; do
+    case "$_key" in
+        APP_KEY|APP_URL|APP_NAME|APP_ENV|APP_DEBUG|\
+        DB_HOST|DB_PORT|DB_DATABASE|DB_USERNAME|DB_PASSWORD|\
+        REDIS_HOST|REDIS_PORT|REDIS_PASSWORD|\
+        CACHE_DRIVER|QUEUE_CONNECTION|SESSION_DRIVER|SESSION_LIFETIME|\
+        LOG_CHANNEL|BROADCAST_DRIVER|\
+        MAIL_DRIVER|MAIL_HOST|MAIL_PORT|MAIL_USERNAME|MAIL_PASSWORD|\
+        MAIL_ENCRYPTION|MAIL_FROM_ADDRESS|MAIL_FROM_NAME)
+            export "$_key=$_val"
+            ;;
+    esac
+done < <(grep -E '^[A-Z_]+=.' "${DATA_DIR}/.env" 2>/dev/null || true)
 
 # ── 缓存 ──────────────────────────────────────────────────
 log "缓存配置 ..."
