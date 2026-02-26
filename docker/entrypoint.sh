@@ -131,6 +131,14 @@ else
     php artisan migrate --force 2>&1 | while IFS= read -r line; do log "  migrate: $line"; done || true
 fi
 
+# ── 同步 .env 到系统环境变量 ─────────────────────────────────
+# Docker --env-file 会把空值（如 APP_KEY=）设为系统环境变量，
+# 导致 DotEnv (createImmutable) 不从文件覆盖。
+# 必须在 config:cache 之前将 .env 文件内容 export 到系统环境。
+set -a
+source "${DATA_DIR}/.env" 2>/dev/null || true
+set +a
+
 # ── 缓存 ──────────────────────────────────────────────────
 log "缓存配置 ..."
 php artisan config:cache  2>&1 || true
