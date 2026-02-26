@@ -33,7 +33,7 @@ else
     ln -sf "${DATA_DIR}/.env" "${APP_DIR}/.env"
 fi
 
-# 用环境变量覆盖 .env（仅首次生成或每次启动都可刷新）
+# 用环境变量覆盖 .env
 override_env() {
     local key="$1" val="${!key:-}"
     if [ -n "$val" ]; then
@@ -48,7 +48,7 @@ for key in APP_NAME APP_ENV APP_KEY APP_DEBUG APP_URL \
            DB_HOST DB_PORT DB_DATABASE DB_USERNAME DB_PASSWORD \
            REDIS_HOST REDIS_PASSWORD REDIS_PORT \
            CACHE_DRIVER QUEUE_CONNECTION SESSION_DRIVER \
-           ADMIN_EMAIL ADMIN_PASSWORD; do
+           ADMIN_EMAIL ADMIN_PASSWORD ADMIN_SECURE_PATH; do
     override_env "$key"
 done
 
@@ -98,7 +98,12 @@ if [ ! -f "$INSTALL_LOCK" ]; then
         exit 1
     fi
 
-    # 2) 创建管理员
+    # 2) 生成 config/v2board.php（设置后台路径等）
+    SECURE_PATH=$(_read_env ADMIN_SECURE_PATH "admin-dashboard")
+    log "设置后台路径: /${SECURE_PATH}"
+    php artisan v2board:init-config --secure-path="$SECURE_PATH" 2>&1 || log "WARN: 初始化配置失败"
+
+    # 3) 创建管理员
     ADMIN_EMAIL=$(_read_env ADMIN_EMAIL "admin@v2board.com")
     ADMIN_PASSWORD=$(_read_env ADMIN_PASSWORD "")
 
@@ -109,12 +114,11 @@ if [ ! -f "$INSTALL_LOCK" ]; then
 
     log "创建管理员账号 ..."
     if php artisan v2board:admin-create --email="$ADMIN_EMAIL" --password="$ADMIN_PASSWORD" 2>&1; then
-        SECURE_PATH=$(php artisan v2board:admin-path 2>/dev/null || echo "unknown")
-        log "=================================="
-        log "  管理员邮箱: ${ADMIN_EMAIL}"
-        log "  管理员密码: ${ADMIN_PASSWORD}"
-        log "  后台路径:   /${SECURE_PATH}"
-        log "=================================="
+        log "======================================================"
+        log "  管理员邮箱:  ${ADMIN_EMAIL}"
+        log "  管理员密码:  ${ADMIN_PASSWORD}"
+        log "  后台路径:    /${SECURE_PATH}"
+        log "======================================================"
     else
         log "ERROR: 管理员创建失败"
         exit 1
@@ -124,7 +128,6 @@ if [ ! -f "$INSTALL_LOCK" ]; then
     log "========== 安装完成 =========="
 else
     log "已安装，跳过初始化"
-    # 非首次启动仍执行迁移（可能有表结构更新）
     php artisan migrate --force 2>&1 | while IFS= read -r line; do log "  migrate: $line"; done || true
 fi
 
