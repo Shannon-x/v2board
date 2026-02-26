@@ -3,6 +3,11 @@ version: "3.8"
 # ============================================================
 # V2Board Docker Compose
 # 仅包含 v2board 服务，MySQL / Redis / 外部 Nginx 均使用已有服务
+#
+# 使用方法：
+#   1. cp .env.docker .env        ← 复制模板
+#   2. vim .env                   ← 修改数据库/Redis 连接信息
+#   3. docker compose up -d       ← 启动
 # ============================================================
 
 services:
@@ -16,8 +21,12 @@ services:
     ports:
       - "${V2BOARD_PORT:-7680}:80"
     volumes:
-      - ./.env:/var/www/v2board/.env:ro
+      # 持久化 .env 配置（首次启动若不存在，entrypoint 会自动从模板生成）
+      - ./data:/var/www/v2board/data
       - v2board-logs:/var/www/v2board/storage/logs
+    env_file:
+      - path: .env
+        required: false
     environment:
       - TZ=Asia/Shanghai
     logging:
@@ -26,7 +35,7 @@ services:
         max-size: "20m"
         max-file: "5"
     # 如果 MySQL/Redis 在同一台宿主机的 Docker 中运行，
-    # 取消下方注释并替换为实际网络名
+    # 取消下方注释并替换为实际网络名（如 1panel-network）
     # networks:
     #   - 1panel-network
 

@@ -2,26 +2,78 @@
 set -euo pipefail
 
 APP_DIR="/var/www/v2board"
+DATA_DIR="${APP_DIR}/data"
 cd "$APP_DIR"
 
 log() { echo "[entrypoint $(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
-# ── .env ────────────────────────────────────────────────────
-if [ ! -f ".env" ]; then
-    if [ -f ".env.example" ]; then
-        cp .env.example .env
-        log "已从 .env.example 创建 .env — 请按需修改后重启容器"
+# ── .env 处理 ──────────────────────────────────────────────
+# 优先级：data/.env（持久卷） > 环境变量自动生成 > .env.docker 模板 > .env.example
+mkdir -p "$DATA_DIR"
+
+# 如果挂载点意外变成目录（Docker 对不存在的文件会创建目录），清理它
+if [ -d "${APP_DIR}/.env" ]; then
+    rm -rf "${APP_DIR}/.env"
+fi
+
+if [ -f "${DATA_DIR}/.env" ]; then
+    ln -sf "${DATA_DIR}/.env" "${APP_DIR}/.env"
+    log ".env 已从 data/.env 加载（持久化）"
+elif [ -f "${APP_DIR}/.env" ] && [ -s "${APP_DIR}/.env" ]; then
+    cp "${APP_DIR}/.env" "${DATA_DIR}/.env"
+    ln -sf "${DATA_DIR}/.env" "${APP_DIR}/.env"
+    log ".env 已复制到 data/ 并建立链接"
+else
+    # 从环境变量或模板生成 .env
+    TEMPLATE=""
+    if [ -f "${APP_DIR}/.env.docker" ]; then
+        TEMPLATE="${APP_DIR}/.env.docker"
+    elif [ -f "${APP_DIR}/.env.example" ]; then
+        TEMPLATE="${APP_DIR}/.env.example"
+    fi
+
+    if [ -n "$TEMPLATE" ]; then
+        cp "$TEMPLATE" "${DATA_DIR}/.env"
+        log "已从 $(basename "$TEMPLATE") 创建 .env"
     else
-        log "ERROR: 未找到 .env 或 .env.example"
+        log "ERROR: 未找到任何 .env 模板文件"
         exit 1
     fi
+
+    # 用 docker-compose 传入的环境变量覆盖 .env 中的值
+    override_env() {
+        local key="$1"
+        local val="${!key:-}"
+        if [ -n "$val" ]; then
+            if grep -qE "^${key}=" "${DATA_DIR}/.env"; then
+                sed -i "s|^${key}=.*|${key}=${val}|" "${DATA_DIR}/.env"
+            else
+                echo "${key}=${val}" >> "${DATA_DIR}/.env"
+            fi
+        fi
+    }
+    for key in APP_NAME APP_ENV APP_KEY APP_DEBUG APP_URL \
+               DB_HOST DB_PORT DB_DATABASE DB_USERNAME DB_PASSWORD \
+               REDIS_HOST REDIS_PASSWORD REDIS_PORT \
+               CACHE_DRIVER QUEUE_CONNECTION SESSION_DRIVER; do
+        override_env "$key"
+    done
+
+    ln -sf "${DATA_DIR}/.env" "${APP_DIR}/.env"
+    log ".env 已生成到 data/.env — 如需修改请编辑 data/.env 后重启容器"
+fi
+
+# 首次运行若无 APP_KEY 则自动生成
+if ! grep -qE '^APP_KEY=.+' "${DATA_DIR}/.env"; then
+    php artisan key:generate --force 2>/dev/null
+    log "已自动生成 APP_KEY"
 fi
 
 # ── 目录 & 权限 ────────────────────────────────────────────
 mkdir -p storage/logs \
          storage/framework/{cache,sessions,views} \
          bootstrap/cache
-chown -R www-data:www-data storage bootstrap/cache
+chown -R www-data:www-data storage bootstrap/cache data
 chmod -R 775 storage bootstrap/cache
 
 # ── 等待外部服务就绪 ───────────────────────────────────────
@@ -39,24 +91,15 @@ wait_for_tcp() {
     log "${label} 已就绪"
 }
 
-DB_HOST=$(php -r "echo parse_url(env('DB_HOST') ?? getenv('DB_HOST'))['host'] ?? getenv('DB_HOST') ?? 'localhost';" 2>/dev/null || echo "localhost")
-DB_PORT=$(php -r "echo getenv('DB_PORT') ?: '3306';" 2>/dev/null || echo "3306")
-REDIS_HOST_VAL=$(php -r "echo getenv('REDIS_HOST') ?: '127.0.0.1';" 2>/dev/null || echo "127.0.0.1")
-REDIS_PORT_VAL=$(php -r "echo getenv('REDIS_PORT') ?: '6379';" 2>/dev/null || echo "6379")
+# 从 .env 文件读取连接信息
+_read_env() { grep -E "^${1}=" "${DATA_DIR}/.env" 2>/dev/null | head -1 | cut -d'=' -f2- | tr -d '[:space:]"'"'" || echo "$2"; }
 
-# 从 .env 文件直接读取（更可靠）
-if [ -f ".env" ]; then
-    _db_host=$(grep -E '^DB_HOST=' .env | cut -d'=' -f2- | tr -d '[:space:]"'"'" || true)
-    _db_port=$(grep -E '^DB_PORT=' .env | cut -d'=' -f2- | tr -d '[:space:]"'"'" || true)
-    _redis_host=$(grep -E '^REDIS_HOST=' .env | cut -d'=' -f2- | tr -d '[:space:]"'"'" || true)
-    _redis_port=$(grep -E '^REDIS_PORT=' .env | cut -d'=' -f2- | tr -d '[:space:]"'"'" || true)
-    [ -n "$_db_host" ]    && DB_HOST="$_db_host"
-    [ -n "$_db_port" ]    && DB_PORT="$_db_port"
-    [ -n "$_redis_host" ] && REDIS_HOST_VAL="$_redis_host"
-    [ -n "$_redis_port" ] && REDIS_PORT_VAL="$_redis_port"
-fi
+DB_HOST=$(_read_env DB_HOST "localhost")
+DB_PORT=$(_read_env DB_PORT "3306")
+REDIS_HOST_VAL=$(_read_env REDIS_HOST "127.0.0.1")
+REDIS_PORT_VAL=$(_read_env REDIS_PORT "6379")
 
-wait_for_tcp "$DB_HOST"       "$DB_PORT"       "MySQL"
+wait_for_tcp "$DB_HOST"        "$DB_PORT"        "MySQL"
 wait_for_tcp "$REDIS_HOST_VAL" "$REDIS_PORT_VAL" "Redis"
 
 # ── Laravel 初始化 ─────────────────────────────────────────

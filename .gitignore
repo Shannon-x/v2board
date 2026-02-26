@@ -9,6 +9,7 @@
 /vendor
 .env
 .env.backup
+/data/
 .phpunit.result.cache
 .idea
 .lock

@@ -6,6 +6,7 @@
 .env
 .env.backup
 .env.*.local
+data/
 .idea
 .DS_Store
 .phpunit.result.cache
