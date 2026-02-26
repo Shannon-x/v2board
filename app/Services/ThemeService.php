@@ -39,9 +39,8 @@ class ThemeService
 
         try {
             Artisan::call('config:cache');
-            while (true) {
-                if (config("theme.{$this->theme}")) break;
-            }
+            $freshConfig = include base_path("config/theme/{$this->theme}.php");
+            app('config')->set("theme.{$this->theme}", $freshConfig);
         } catch (\Exception $e) {
             abort(500, "{$this->theme}初始化失败");
         }

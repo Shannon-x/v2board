@@ -79,7 +79,7 @@ class ThemeController extends Controller
 
         try {
             Artisan::call('config:cache');
-//            sleep(2);
+            app('config')->set("theme.{$payload['name']}", $config);
         } catch (\Exception $e) {
             abort(500, '保存失败');
         }
