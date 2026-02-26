@@ -53,9 +53,9 @@ for key in APP_NAME APP_ENV APP_KEY APP_DEBUG APP_URL \
 done
 
 # ── 目录 & 权限 ────────────────────────────────────────────
-mkdir -p storage/logs storage/framework/{cache,sessions,views} bootstrap/cache
-chown -R www-data:www-data storage bootstrap/cache data
-chmod -R 775 storage bootstrap/cache
+mkdir -p storage/logs storage/framework/{cache,sessions,views} bootstrap/cache config/theme
+chown -R www-data:www-data storage bootstrap/cache data config
+chmod -R 775 storage bootstrap/cache config
 
 # ── APP_KEY ────────────────────────────────────────────────
 if ! grep -qE '^APP_KEY=base64:.+' "${DATA_DIR}/.env"; then
@@ -132,6 +132,9 @@ else
     php artisan migrate --force 2>&1 || log "WARN: migrate 有错误（可能是表已存在），已忽略"
 fi
 
+# 确保所有 artisan 生成的文件归 www-data
+chown -R www-data:www-data config bootstrap/cache
+
 # ── 同步 .env 关键变量到系统环境 ──────────────────────────────
 # Docker --env-file 会把空值（如 APP_KEY=）设为系统环境变量，
 # 导致 DotEnv (createImmutable) 不从文件覆盖。
@@ -151,11 +154,11 @@ while IFS='=' read -r _key _val; do
     esac
 done < <(grep -E '^[A-Z_]+=.' "${DATA_DIR}/.env" 2>/dev/null || true)
 
-# ── 缓存 ──────────────────────────────────────────────────
+# ── 缓存（以 www-data 执行，保证文件权限正确） ──────────────
 log "缓存配置 ..."
-php artisan config:cache  2>&1 || true
-php artisan route:cache   2>&1 || true
-php artisan view:cache    2>&1 || true
+su -s /bin/bash www-data -c "cd ${APP_DIR} && php artisan config:cache" 2>&1 || true
+su -s /bin/bash www-data -c "cd ${APP_DIR} && php artisan route:cache"  2>&1 || true
+su -s /bin/bash www-data -c "cd ${APP_DIR} && php artisan view:cache"   2>&1 || true
 
 log "初始化完成，启动服务 ..."
 exec "$@"

@@ -204,11 +204,20 @@ class ConfigController extends Controller
             abort(500, '修改失败');
         }
         if (function_exists('opcache_reset')) {
-            if (opcache_reset() === false) {
-                abort(500, '缓存清除失败，请卸载或检查opcache配置状态');
-            }
+            @opcache_reset();
         }
-        Artisan::call('config:cache');
+        $freshConfig = include base_path('config/v2board.php');
+        app('config')->set('v2board', $freshConfig);
+
+        $cacheFile = base_path('bootstrap/cache/config.php');
+        if (file_exists($cacheFile)) {
+            $cached = require $cacheFile;
+            $cached['v2board'] = $freshConfig;
+            file_put_contents($cacheFile, '<?php return ' . var_export($cached, true) . ';' . PHP_EOL, LOCK_EX);
+        } else {
+            try { Artisan::call('config:cache'); } catch (\Exception $e) {}
+        }
+
         if(Cache::has('WEBMANPID')) {
             $pid = Cache::get('WEBMANPID');
             Cache::forget('WEBMANPID');

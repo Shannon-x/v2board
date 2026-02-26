@@ -5,7 +5,6 @@ namespace App\Http\Controllers\V1\Admin;
 use App\Http\Controllers\Controller;
 use App\Services\ThemeService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
 
 class ThemeController extends Controller
@@ -78,10 +77,12 @@ class ThemeController extends Controller
         }
 
         app('config')->set("theme.{$payload['name']}", $config);
-        try {
-            Artisan::call('config:cache');
-        } catch (\Exception $e) {
-            // Workerman 常驻进程中 config:cache 可能失败，不影响运行
+
+        $cacheFile = base_path('bootstrap/cache/config.php');
+        if (file_exists($cacheFile)) {
+            $cached = require $cacheFile;
+            data_set($cached, "theme.{$payload['name']}", $config);
+            file_put_contents($cacheFile, '<?php return ' . var_export($cached, true) . ';' . PHP_EOL, LOCK_EX);
         }
 
         return response([

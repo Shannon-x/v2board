@@ -2,13 +2,21 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
 
 class ThemeService
 {
     private $path;
     private $theme;
+
+    private function updateCachedConfig(string $dotKey, $value): void
+    {
+        $cacheFile = base_path('bootstrap/cache/config.php');
+        if (!file_exists($cacheFile)) return;
+        $cached = require $cacheFile;
+        data_set($cached, $dotKey, $value);
+        file_put_contents($cacheFile, '<?php return ' . var_export($cached, true) . ';' . PHP_EOL, LOCK_EX);
+    }
 
     public function __construct($theme)
     {
@@ -39,10 +47,6 @@ class ThemeService
 
         $freshConfig = include base_path("config/theme/{$this->theme}.php");
         app('config')->set("theme.{$this->theme}", $freshConfig);
-        try {
-            Artisan::call('config:cache');
-        } catch (\Exception $e) {
-            // Workerman 常驻进程中 config:cache 可能失败，不影响运行
-        }
+        $this->updateCachedConfig("theme.{$this->theme}", $freshConfig);
     }
 }

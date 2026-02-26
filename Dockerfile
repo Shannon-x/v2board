@@ -79,9 +79,9 @@ COPY --from=vendor /build/vendor ./vendor
 RUN php artisan package:discover --ansi 2>/dev/null || true
 
 # 目录权限
-RUN mkdir -p storage/logs storage/framework/{cache,sessions,views} bootstrap/cache \
+RUN mkdir -p storage/logs storage/framework/{cache,sessions,views} bootstrap/cache config/theme \
     && chown -R www-data:www-data /var/www/v2board \
-    && chmod -R 775 storage bootstrap/cache
+    && chmod -R 775 storage bootstrap/cache config
 
 # 配置文件
 COPY docker/nginx.conf         /etc/nginx/sites-available/default
