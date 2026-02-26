@@ -36,7 +36,7 @@ cd v2board
 cp .env.example .env
 ```
 
-编辑 `.env`，至少修改以下配置：
+编辑 `.env`，至少修改以下配置（`APP_KEY` 留空即可，首次启动自动生成）：
 
 ```ini
 # 站点地址（改为你的实际域名）
@@ -195,6 +195,7 @@ networks:
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
+| `APP_KEY` | 自动生成 | Laravel 加密密钥，用于 JWT 签名、Session 加密等。**无需手动配置**，首次启动自动生成并持久化到 `data/.env`。迁移部署时务必保留原值，否则所有用户 token 失效 |
 | `APP_URL` | `http://localhost` | 站点访问地址 |
 | `APP_ENV` | `production` | 运行环境 |
 | `APP_DEBUG` | `false` | 调试模式 |
@@ -270,6 +271,12 @@ networks:
 ### 如何修改后台路径？
 
 编辑 `.env` 中的 `ADMIN_SECURE_PATH`，仅在**首次安装**时生效。安装后如需修改，直接编辑容器内 `config/v2board.php` 中的 `secure_path` 字段，然后重启容器。
+
+### APP_KEY 是什么？需要手动设置吗？
+
+`APP_KEY` 是 Laravel 的加密密钥，用于 JWT 签名（用户登录认证）、Session 加密等核心功能。**不需要手动设置**，首次启动时容器自动生成并保存在 `./data/.env` 中。
+
+> **重要**：迁移到新服务器时，必须保留 `./data/.env` 中的 `APP_KEY` 值。如果 key 变更，所有已登录用户的 token 将失效，需要重新登录。
 
 ### 如何更新版本？
 
