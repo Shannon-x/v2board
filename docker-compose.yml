@@ -1,6 +1,6 @@
 services:
   v2board:
-    image: ghcr.io/shannon-x/v2board:latest
+    image: ghcr.io/shannon-x/v2board:bf40f5e
     container_name: v2board
     restart: unless-stopped
     ports:
