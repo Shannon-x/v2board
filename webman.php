@@ -7,7 +7,8 @@ use Workerman\Worker;
 use Illuminate\Support\Facades\Cache;
 
 putenv('APP_RUNNING_IN_CONSOLE=false');
-define('MAX_REQUEST', 6600);
+// 可通过环境变量 WEBMAN_MAX_REQUEST 覆盖，默认 100000 以减少因请求计数导致的频繁重启（原 6600 约 2-5 分钟重启一次）
+define('MAX_REQUEST', max(1000, (int) (getenv('WEBMAN_MAX_REQUEST') ?: 100000)));
 define('isWEBMAN', true);
 
 Adapterman::init();

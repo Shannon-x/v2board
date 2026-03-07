@@ -8,10 +8,26 @@ services:
     volumes:
       - ./data:/var/www/v2board/data
       - v2board-logs:/var/www/v2board/storage/logs
+      # 挂载运行时配置，便于无需重建镜像即可调整日志与健康检查策略
+      - ./docker/nginx.conf:/etc/nginx/sites-available/default:ro
+      - ./docker/supervisord.conf:/etc/supervisor/conf.d/v2board.conf:ro
+      - ./docker/logrotate.conf:/etc/logrotate.d/v2board:ro
+      - ./docker/log-tail.sh:/usr/local/bin/log-tail.sh:ro
     env_file:
       - .env
     environment:
       - TZ=${TZ:-Asia/Shanghai}
+      # 可选：webman 每处理多少请求后重启（默认 100000，原为 6600 导致 2-5 分钟重启一次）
+      - WEBMAN_MAX_REQUEST=${WEBMAN_MAX_REQUEST:-100000}
+      # 是否把 Nginx 访问日志实时输出到 docker logs（默认 false，避免日志过大）
+      - TAIL_ACCESS_LOG=${TAIL_ACCESS_LOG:-false}
+    healthcheck:
+      # 兼容旧/新镜像：优先 /healthz，回退 /monitor/api，避免 "/" 因 Host 校验返回 403
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1/monitor/api >/dev/null 2>&1 || curl -fsS http://127.0.0.1/healthz >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
     logging:
       driver: json-file
       options:

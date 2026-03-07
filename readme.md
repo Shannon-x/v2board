@@ -288,14 +288,31 @@ docker compose up -d
 ### 如何查看运行日志？
 
 ```bash
-# 容器启动日志
-docker logs v2board
+# 实时查看容器日志（已包含 webman/horizon/nginx-error/laravel）
+docker logs -f v2board
 
 # 应用日志（进入容器）
 docker exec v2board tail -f /var/www/v2board/storage/logs/webman.log
 docker exec v2board tail -f /var/www/v2board/storage/logs/horizon.log
 docker exec v2board tail -f /var/www/v2board/storage/logs/nginx-error.log
 ```
+
+说明：
+
+- 容器内有一个 `logtail` 进程，会把关键日志实时转发到 `docker logs`
+- 默认不转发 `nginx-access.log`，避免高并发下日志刷屏
+- 如需临时观察访问日志，可在 `.env` 或 compose 中设置 `TAIL_ACCESS_LOG=true` 后重启容器
+
+### 日志会不会无限增长？
+
+不会，项目做了双层限制：
+
+1. **容器 stdout/stderr（`docker logs`）**  
+   由 `docker-compose.yml` 中 `json-file` 控制（默认 `max-size=20m`、`max-file=5`）
+2. **容器内文件日志（`storage/logs/*.log`）**  
+   由 `logrotate` 每日轮转、压缩、保留 7 份，且单文件超过 50MB 会提前轮转
+
+如果你希望更严格，可把 `max-size`、`max-file`、`rotate`、`maxsize` 再调小。
 
 ### 容器内进程状态
 
@@ -311,6 +328,30 @@ logrotate  RUNNING   pid 124, uptime 0:05:00
 nginx      RUNNING   pid 125, uptime 0:05:00
 webman     RUNNING   pid 126, uptime 0:05:00
 ```
+
+### 容器显示 `unhealthy`，但服务看起来正常？
+
+常见原因是健康检查探针访问 `/` 时被应用按 Host 策略返回 `403`（例如探针 Host 为 `127.0.0.1`）。
+
+本项目已改为专用健康检查端点（`/healthz`，兼容回退 `/monitor/api`），避免误判。你可以直接更新并重建：
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+如果你使用的是自定义镜像构建流程，请确保镜像中的 `HEALTHCHECK` 不再检查 `/`，而是检查 `/healthz`（或 `/monitor/api`）。
+
+### Webman 频繁重启？
+
+若日志中 webman 每 2～5 分钟重启一次，通常由 `MAX_REQUEST=6600` 触发。可通过环境变量调整：
+
+```bash
+# docker-compose 或 .env 中设置
+WEBMAN_MAX_REQUEST=100000
+```
+
+详见 `docs/WEBMAN_RESTART_ANALYSIS.md`。
 
 ### MySQL / Redis 连接失败？
 

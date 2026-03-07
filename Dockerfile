@@ -89,15 +89,17 @@ COPY docker/supervisord.conf   /etc/supervisor/conf.d/v2board.conf
 COPY docker/php.ini            /usr/local/etc/php/conf.d/99-v2board.ini
 COPY docker/logrotate.conf     /etc/logrotate.d/v2board
 COPY docker/entrypoint.sh      /entrypoint.sh
+COPY docker/log-tail.sh        /usr/local/bin/log-tail.sh
 
 RUN chmod +x /entrypoint.sh \
+    && chmod +x /usr/local/bin/log-tail.sh \
     && rm -f /etc/nginx/sites-enabled/default \
     && ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
 
 EXPOSE 80
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD curl -sf http://127.0.0.1/ -o /dev/null || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+    CMD curl -fsS http://127.0.0.1/healthz -o /dev/null 2>&1 || curl -fsS http://127.0.0.1/monitor/api -o /dev/null 2>&1 || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["supervisord", "-n", "-c", "/etc/supervisor/supervisord.conf"]
