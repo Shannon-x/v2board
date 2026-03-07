@@ -1,0 +1,110 @@
+name: Sync Upstream
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"    # 每 6 小时检查一次
+  workflow_dispatch:           # 支持手动触发
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote
+        run: git remote add upstream https://github.com/wyx2685/v2board.git || true
+
+      - name: Fetch upstream
+        run: git fetch upstream master
+
+      - name: Check for new commits
+        id: check
+        run: |
+          LOCAL=$(git rev-parse HEAD)
+          UPSTREAM=$(git rev-parse upstream/master)
+          MERGE_BASE=$(git merge-base HEAD upstream/master)
+
+          echo "local=$LOCAL" >> "$GITHUB_OUTPUT"
+          echo "upstream=$UPSTREAM" >> "$GITHUB_OUTPUT"
+          echo "merge_base=$MERGE_BASE" >> "$GITHUB_OUTPUT"
+
+          if [ "$MERGE_BASE" = "$UPSTREAM" ]; then
+            echo "has_updates=false" >> "$GITHUB_OUTPUT"
+            echo "✅ 已是最新，无需同步"
+          else
+            COMMIT_COUNT=$(git rev-list "$MERGE_BASE".."$UPSTREAM" --count)
+            echo "has_updates=true" >> "$GITHUB_OUTPUT"
+            echo "🔄 上游有 $COMMIT_COUNT 个新提交待合并"
+            echo ""
+            echo "新提交列表："
+            git log --oneline "$MERGE_BASE".."$UPSTREAM"
+          fi
+
+      - name: Merge upstream
+        if: steps.check.outputs.has_updates == 'true'
+        id: merge
+        run: |
+          if git merge upstream/master --no-edit -m "chore: merge upstream $(git rev-parse --short upstream/master)"; then
+            echo "result=success" >> "$GITHUB_OUTPUT"
+            echo "✅ 自动合并成功"
+          else
+            echo "result=conflict" >> "$GITHUB_OUTPUT"
+            echo "⚠️ 合并冲突，将创建 PR"
+            git merge --abort
+          fi
+
+      - name: Push merged changes
+        if: steps.merge.outputs.result == 'success'
+        run: git push origin master
+
+      - name: Create PR on conflict
+        if: steps.merge.outputs.result == 'conflict'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="sync-upstream/$(date +%Y%m%d-%H%M%S)"
+          git checkout -b "$BRANCH"
+          git merge upstream/master --no-edit || true
+
+          # 标记冲突文件
+          CONFLICTS=$(git diff --name-only --diff-filter=U)
+          git add -A
+          git commit -m "chore: merge upstream (conflicts need manual resolve)" --no-verify || true
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --title "🔄 Sync upstream: $(git rev-parse --short upstream/master)" \
+            --body "$(cat <<EOF
+          ## 上游同步
+
+          上游仓库有新的提交需要合并，但存在冲突需要手动解决。
+
+          **上游 commit:** \`$(git rev-parse --short upstream/master)\`
+
+          ### 冲突文件
+          \`\`\`
+          $CONFLICTS
+          \`\`\`
+
+          ### 新提交
+          $(git log --oneline ${{ steps.check.outputs.merge_base }}..${{ steps.check.outputs.upstream }})
+
+          > 解决冲突后合并此 PR，会自动触发 Docker 镜像构建。
+          EOF
+          )" \
+            --base master \
+            --head "$BRANCH"
