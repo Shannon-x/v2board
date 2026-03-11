@@ -85,6 +85,11 @@ _read_env() {
 wait_for_tcp "$(_read_env DB_HOST localhost)"    "$(_read_env DB_PORT 3306)"  "MySQL"
 wait_for_tcp "$(_read_env REDIS_HOST 127.0.0.1)" "$(_read_env REDIS_PORT 6379)" "Redis"
 
+# ── 初始化配置（必运行，防止重构容器丢失 config/v2board.php） ──
+SECURE_PATH=$(_read_env ADMIN_SECURE_PATH "admin-dashboard")
+log "设置/确认后台路径: /${SECURE_PATH}"
+php artisan v2board:init-config --secure-path="$SECURE_PATH" 2>&1 || log "WARN: 初始化配置失败"
+
 # ── 自动安装（替代 php artisan v2board:install）──────────────
 if [ ! -f "$INSTALL_LOCK" ]; then
     log "========== 首次安装 =========="
@@ -98,12 +103,7 @@ if [ ! -f "$INSTALL_LOCK" ]; then
         exit 1
     fi
 
-    # 2) 生成 config/v2board.php（设置后台路径等）
-    SECURE_PATH=$(_read_env ADMIN_SECURE_PATH "admin-dashboard")
-    log "设置后台路径: /${SECURE_PATH}"
-    php artisan v2board:init-config --secure-path="$SECURE_PATH" 2>&1 || log "WARN: 初始化配置失败"
-
-    # 3) 创建管理员
+    # 2) 创建管理员
     ADMIN_EMAIL=$(_read_env ADMIN_EMAIL "admin@v2board.com")
     ADMIN_PASSWORD=$(_read_env ADMIN_PASSWORD "")
 

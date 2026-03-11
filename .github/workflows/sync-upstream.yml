@@ -8,6 +8,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 
 jobs:
   sync:
@@ -70,6 +71,14 @@ jobs:
       - name: Push merged changes
         if: steps.merge.outputs.result == 'success'
         run: git push origin master
+
+      - name: Trigger Docker Build
+        if: steps.merge.outputs.result == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Triggering Docker Image Build..."
+          gh workflow run docker-build.yml -R ${{ github.repository }} --ref master
 
       - name: Create PR on conflict
         if: steps.merge.outputs.result == 'conflict'
