@@ -57,6 +57,11 @@ mkdir -p storage/logs storage/framework/{cache,sessions,views} bootstrap/cache c
 chown -R www-data:www-data storage bootstrap/cache data config
 chmod -R 775 storage bootstrap/cache config
 
+# 可选后台自定义样式文件（默认镜像不带该文件，避免前端 404）
+if [ ! -f "${APP_DIR}/public/assets/admin/custom.css" ]; then
+    echo "/* optional admin override css */" > "${APP_DIR}/public/assets/admin/custom.css"
+fi
+
 # ── APP_KEY ────────────────────────────────────────────────
 if ! grep -qE '^APP_KEY=base64:.+' "${DATA_DIR}/.env"; then
     log "生成 APP_KEY ..."
@@ -103,7 +108,9 @@ if [ ! -f "$INSTALL_LOCK" ]; then
         exit 1
     fi
 
-    # 2) 创建管理员
+    # 2) 首次安装时后台路径已在上方同步，无需重复设置
+
+    # 3) 创建管理员
     ADMIN_EMAIL=$(_read_env ADMIN_EMAIL "admin@v2board.com")
     ADMIN_PASSWORD=$(_read_env ADMIN_PASSWORD "")
 

@@ -270,7 +270,7 @@ networks:
 
 ### 如何修改后台路径？
 
-编辑 `.env` 中的 `ADMIN_SECURE_PATH`，仅在**首次安装**时生效。安装后如需修改，直接编辑容器内 `config/v2board.php` 中的 `secure_path` 字段，然后重启容器。
+编辑 `.env` 中的 `ADMIN_SECURE_PATH`，重启容器后会自动同步到 `config/v2board.php` 的 `secure_path` 字段。
 
 ### APP_KEY 是什么？需要手动设置吗？
 

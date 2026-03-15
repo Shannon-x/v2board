@@ -2,9 +2,21 @@
 <html>
 
 <head>
+    <style>
+        /* Fallback style to keep login usable when any CSS asset fails */
+        .v2board-logo {
+            max-width: 180px;
+            max-height: 72px;
+            width: auto;
+            height: auto;
+            object-fit: contain;
+        }
+    </style>
     <link rel="stylesheet" href="/assets/admin/components.chunk.css?v={{$version}}">
     <link rel="stylesheet" href="/assets/admin/umi.css?v={{$version}}">
-    <link rel="stylesheet" href="/assets/admin/custom.css?v={{$version}}">
+    @if (file_exists(public_path('/assets/admin/custom.css')))
+        <link rel="stylesheet" href="/assets/admin/custom.css?v={{$version}}.{{filemtime(public_path('/assets/admin/custom.css'))}}">
+    @endif
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no">
     <title>{{$title}}</title>

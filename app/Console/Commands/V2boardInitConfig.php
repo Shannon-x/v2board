@@ -14,15 +14,6 @@ class V2boardInitConfig extends Command
     public function handle()
     {
         $configPath = base_path('config/v2board.php');
-
-        if (File::exists($configPath)) {
-            $config = include $configPath;
-            if (is_array($config) && !empty($config['secure_path'])) {
-                $this->info('config/v2board.php 已存在且 secure_path 已设置，跳过');
-                return 0;
-            }
-        }
-
         $securePath = $this->option('secure-path');
 
         $config = [];
@@ -33,12 +24,18 @@ class V2boardInitConfig extends Command
             }
         }
 
+        $previousSecurePath = $config['secure_path'] ?? null;
         $config['secure_path'] = $securePath;
 
         $data = var_export($config, true);
         File::put($configPath, "<?php\n return {$data} ;");
 
-        $this->info("config/v2board.php 已生成，secure_path = {$securePath}");
+        if ($previousSecurePath === $securePath) {
+            $this->info("config/v2board.php 已确认，secure_path = {$securePath}");
+            return 0;
+        }
+
+        $this->info("config/v2board.php 已更新，secure_path = {$securePath}");
         return 0;
     }
 }

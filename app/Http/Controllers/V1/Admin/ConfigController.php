@@ -190,6 +190,7 @@ class ConfigController extends Controller
     {
         $data = $request->validated();
         $config = config('v2board');
+        $originalConfig = $config;
         foreach (ConfigSave::RULES as $k => $v) {
             if (!in_array($k, array_keys(ConfigSave::RULES))) {
                 unset($config[$k]);
@@ -216,6 +217,19 @@ class ConfigController extends Controller
             file_put_contents($cacheFile, '<?php return ' . var_export($cached, true) . ';' . PHP_EOL, LOCK_EX);
         } else {
             try { Artisan::call('config:cache'); } catch (\Exception $e) {}
+        }
+
+        $routeSensitiveKeys = ['subscribe_path', 'secure_path'];
+        $shouldRefreshRouteCache = false;
+        foreach ($routeSensitiveKeys as $routeSensitiveKey) {
+            if (($originalConfig[$routeSensitiveKey] ?? null) !== ($freshConfig[$routeSensitiveKey] ?? null)) {
+                $shouldRefreshRouteCache = true;
+                break;
+            }
+        }
+        if ($shouldRefreshRouteCache) {
+            try { Artisan::call('route:clear'); } catch (\Exception $e) {}
+            try { Artisan::call('route:cache'); } catch (\Exception $e) {}
         }
 
         if(Cache::has('WEBMANPID')) {

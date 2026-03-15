@@ -38,7 +38,8 @@ Route::get('/', function (Request $request) {
 });
 
 //TODO:: 兼容
-Route::get('/' . config('v2board.secure_path', config('v2board.frontend_admin_path', hash('crc32b', config('app.key')))), function () {
+$securePath = trim((string) config('v2board.secure_path', config('v2board.frontend_admin_path', hash('crc32b', config('app.key')))), '/');
+$renderAdmin = function () {
     return view('admin', [
         'title' => config('v2board.app_name', 'V2Board'),
         'theme_sidebar' => config('v2board.frontend_theme_sidebar', 'light'),
@@ -49,7 +50,9 @@ Route::get('/' . config('v2board.secure_path', config('v2board.frontend_admin_pa
         'logo' => config('v2board.logo'),
         'secure_path' => config('v2board.secure_path', config('v2board.frontend_admin_path', hash('crc32b', config('app.key'))))
     ]);
-});
+};
+Route::get('/' . $securePath, $renderAdmin);
+Route::get('/' . $securePath . '/', $renderAdmin);
 
 if (!empty(config('v2board.subscribe_path'))) {
     Route::get(config('v2board.subscribe_path'), 'V1\\Client\\ClientController@subscribe')->middleware('client');
