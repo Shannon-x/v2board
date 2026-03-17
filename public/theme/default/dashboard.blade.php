@@ -2,6 +2,16 @@
 <html>
 
 <head>
+    <style>
+        .v2board-logo {
+            max-width: 200px !important;
+            max-height: 80px !important;
+            width: auto !important;
+            height: auto !important;
+            object-fit: contain !important;
+            display: block !important;
+        }
+    </style>
     <link rel="stylesheet" href="/theme/{{$theme}}/assets/components.chunk.css?v={{$version}}">
     <link rel="stylesheet" href="/theme/{{$theme}}/assets/umi.css?v={{$version}}">
     @if (file_exists(public_path("/theme/{$theme}/assets/custom.css")))

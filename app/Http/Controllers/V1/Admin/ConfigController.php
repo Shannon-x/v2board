@@ -180,7 +180,6 @@ class ConfigController extends Controller
                 ]
             ]);
         };
-        // TODO: default should be in Dict
         return response([
             'data' => $data
         ]);
@@ -190,7 +189,9 @@ class ConfigController extends Controller
     {
         $data = $request->validated();
         $config = config('v2board');
+        if (!is_array($config)) $config = [];
         $originalConfig = $config;
+
         foreach (ConfigSave::RULES as $k => $v) {
             if (!in_array($k, array_keys(ConfigSave::RULES))) {
                 unset($config[$k]);
@@ -204,6 +205,11 @@ class ConfigController extends Controller
         if (!File::put(base_path() . '/config/v2board.php', "<?php\n return $data ;")) {
             abort(500, '修改失败');
         }
+
+        // backup to data dir for persistence across container recreations
+        $backupPath = base_path('data/config-v2board-backup.php');
+        @File::put($backupPath, "<?php\n return " . var_export($config, 1) . " ;");
+
         if (function_exists('opcache_reset')) {
             @opcache_reset();
         }
@@ -232,11 +238,13 @@ class ConfigController extends Controller
             try { Artisan::call('route:cache'); } catch (\Exception $e) {}
         }
 
-        if(Cache::has('WEBMANPID')) {
+        if (Cache::has('WEBMANPID')) {
             $pid = Cache::get('WEBMANPID');
-            Cache::forget('WEBMANPID');
+            // SIGUSR1 (10) = graceful reload: workers finish current requests then restart
+            // SIGTERM (15) would kill the master immediately, causing 500 for in-flight requests
+            posix_kill($pid, 10);
             return response([
-                'data' => posix_kill($pid, 15)
+                'data' => true
             ]);
         }
         return response([

@@ -3,13 +3,13 @@
 
 <head>
     <style>
-        /* Fallback style to keep login usable when any CSS asset fails */
         .v2board-logo {
-            max-width: 180px;
-            max-height: 72px;
-            width: auto;
-            height: auto;
-            object-fit: contain;
+            max-width: 200px !important;
+            max-height: 80px !important;
+            width: auto !important;
+            height: auto !important;
+            object-fit: contain !important;
+            display: block !important;
         }
     </style>
     <link rel="stylesheet" href="/assets/admin/components.chunk.css?v={{$version}}">

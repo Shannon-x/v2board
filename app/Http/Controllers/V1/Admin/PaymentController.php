@@ -26,11 +26,12 @@ class PaymentController extends Controller
     public function fetch()
     {
         $payments = Payment::orderBy('sort', 'ASC')->get();
+        $baseUrl = rtrim(config('v2board.app_url') ?: url('/'), '/');
         foreach ($payments as $k => $v) {
-            $notifyUrl = url("/api/v1/guest/payment/notify/{$v->payment}/{$v->uuid}");
+            $notifyPath = "/api/v1/guest/payment/notify/{$v->payment}/{$v->uuid}";
+            $notifyUrl = $baseUrl . $notifyPath;
             if ($v->notify_domain) {
-                $parseUrl = parse_url($notifyUrl);
-                $notifyUrl = $v->notify_domain . $parseUrl['path'];
+                $notifyUrl = rtrim($v->notify_domain, '/') . $notifyPath;
             }
             $payments[$k]['notify_url'] = $notifyUrl;
         }

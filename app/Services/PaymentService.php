@@ -38,16 +38,17 @@ class PaymentService
 
     public function pay($order)
     {
-        // custom notify domain name
-        $notifyUrl = url("/api/v1/guest/payment/notify/{$this->method}/{$this->config['uuid']}");
+        // Prefer configured app_url to avoid generating internal container host in URLs.
+        $baseUrl = rtrim(config('v2board.app_url') ?: url('/'), '/');
+        $notifyPath = "/api/v1/guest/payment/notify/{$this->method}/{$this->config['uuid']}";
+        $notifyUrl = $baseUrl . $notifyPath;
         if ($this->config['notify_domain']) {
-            $parseUrl = parse_url($notifyUrl);
-            $notifyUrl = $this->config['notify_domain'] . $parseUrl['path'];
+            $notifyUrl = rtrim($this->config['notify_domain'], '/') . $notifyPath;
         }
 
         return $this->payment->pay([
             'notify_url' => $notifyUrl,
-            'return_url' => url('/#/order/' . $order['trade_no']),
+            'return_url' => $baseUrl . '/#/order/' . $order['trade_no'],
             'trade_no' => $order['trade_no'],
             'total_amount' => $order['total_amount'],
             'user_id' => $order['user_id'],
