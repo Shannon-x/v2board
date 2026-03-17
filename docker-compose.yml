@@ -13,6 +13,21 @@ services:
       - ./docker/supervisord.conf:/etc/supervisor/conf.d/v2board.conf:ro
       - ./docker/logrotate.conf:/etc/logrotate.d/v2board:ro
       - ./docker/log-tail.sh:/usr/local/bin/log-tail.sh:ro
+      # 信任代理，使 url() 在反代后生成正确的 https 公网地址
+      - ./app/Http/Middleware/TrustProxies.php:/var/www/v2board/app/Http/Middleware/TrustProxies.php:ro
+      # 支付服务修复：优先使用 app_url 拼接回调地址
+      - ./app/Services/PaymentService.php:/var/www/v2board/app/Services/PaymentService.php:ro
+      - ./app/Http/Controllers/V1/Admin/PaymentController.php:/var/www/v2board/app/Http/Controllers/V1/Admin/PaymentController.php:ro
+      # ConfigController: SIGUSR1 graceful reload + 自动备份配置到 data 目录
+      - ./app/Http/Controllers/V1/Admin/ConfigController.php:/var/www/v2board/app/Http/Controllers/V1/Admin/ConfigController.php:ro
+      # v2board 运行时配置（可写，由后台保存生成，自动备份到 data 目录）
+      - ./config-v2board.php:/var/www/v2board/config/v2board.php
+      # Horizon 队列配置（确保 production 环境下也有 worker 处理队列）
+      - ./config/horizon.php:/var/www/v2board/config/horizon.php:ro
+      # Logo 尺寸约束：防止大图撑爆登录页
+      - ./resources/views/admin.blade.php:/var/www/v2board/resources/views/admin.blade.php:ro
+      - ./public/assets/admin/custom.css:/var/www/v2board/public/assets/admin/custom.css:ro
+      - ./public/theme/default/dashboard.blade.php:/var/www/v2board/public/theme/default/dashboard.blade.php:ro
     env_file:
       - .env
     environment:
