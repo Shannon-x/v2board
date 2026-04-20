@@ -104834,7 +104834,7 @@
                 }, y.a.createElement("label", null, "ECH Server Name (\u4f2a\u88c5\u57df\u540d/\u5916\u5c42SNI)"), y.a.createElement(s["a"], {
                     value: e.ech_server_name || "",
                     onChange: e=>this.change("ech_server_name", e.target.value),
-                    placeholder: "\u7559\u7a7a\u9ed8\u8ba4 cloudflare-ech.com"
+                    placeholder: "\u5fc5\u586b"
                 })), e.ech === "custom" && y.a.createElement("div", {
                     className: "form-group"
                 }, y.a.createElement("label", null, "ECH Key (\u670d\u52a1\u7aef\u79c1\u94a5)"), y.a.createElement(s["a"], {
