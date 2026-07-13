@@ -6,7 +6,10 @@ use Linfo\Linfo;
 $lInfo = new Linfo();
 $parser = $lInfo->getParser();
 
-$maxProcesses = (int)ceil($parser->getRam()['total'] / 1024 / 1024 / 1024 * 6);
+$maxProcesses = min(
+    (int)ceil($parser->getRam()['total'] / 1024 / 1024 / 1024 * 6),
+    (int)env('HORIZON_MAX_PROCESSES', 128)
+);
 
 $workerConfig = [
     'V2board' => [
