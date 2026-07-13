@@ -18,7 +18,9 @@ Homestead.yaml
 npm-debug.log
 yarn-error.log
 composer.phar
-composer.lock
+# composer.lock 已纳入版本管理：锁定依赖版本，保证构建可复现且能命中 Docker 层缓存。
+# 上游没有这个文件，因此同步时不会产生冲突；上游若改动 composer.json，
+# sync-upstream 工作流会自动重新生成 lock（见 .github/workflows/sync-upstream.yml）。
 yarn.lock
 .DS_Store
 public/clients/*

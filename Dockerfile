@@ -9,13 +9,20 @@
 FROM composer:2 AS vendor
 
 WORKDIR /build
-COPY composer.json ./
-COPY . .
+
+# 只先拷贝依赖清单：这一层的缓存键仅取决于 composer.json/composer.lock，
+# 因此改动业务代码不会再让依赖重装。（务必不要在 composer install 之前 COPY 源码）
+COPY composer.json composer.lock ./
 RUN composer install \
         --no-dev \
-        --optimize-autoloader \
         --prefer-dist \
+        --no-scripts \
+        --no-autoloader \
         --ignore-platform-reqs
+
+# 依赖装完后再拷贝源码，仅重建 autoload 映射（秒级）
+COPY . .
+RUN composer dump-autoload --no-dev --optimize --no-scripts
 
 # ---------- Stage 2: 运行时镜像 ----------
 FROM php:8.1-cli-bookworm
