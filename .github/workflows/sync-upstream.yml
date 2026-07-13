@@ -37,10 +37,12 @@ jobs:
         run: |
           LOCAL=$(git rev-parse HEAD)
           UPSTREAM=$(git rev-parse upstream/master)
+          UPSTREAM_SHORT=$(git rev-parse --short upstream/master)
           MERGE_BASE=$(git merge-base HEAD upstream/master)
 
           echo "local=$LOCAL" >> "$GITHUB_OUTPUT"
           echo "upstream=$UPSTREAM" >> "$GITHUB_OUTPUT"
+          echo "upstream_short=$UPSTREAM_SHORT" >> "$GITHUB_OUTPUT"
           echo "merge_base=$MERGE_BASE" >> "$GITHUB_OUTPUT"
 
           if [ "$MERGE_BASE" = "$UPSTREAM" ]; then
@@ -84,36 +86,61 @@ jobs:
         if: steps.merge.outputs.result == 'conflict'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 本仓库是 wyx2685/v2board 的 fork。不显式指定仓库时，gh 会把 PR 的 base
+          # 解析到上游父仓库，而 GITHUB_TOKEN 对上游无写权限（createPullRequest 403）。
+          GH_REPO: ${{ github.repository }}
+          UPSTREAM_SHORT: ${{ steps.check.outputs.upstream_short }}
+          MERGE_BASE: ${{ steps.check.outputs.merge_base }}
+          UPSTREAM: ${{ steps.check.outputs.upstream }}
         run: |
-          BRANCH="sync-upstream/$(date +%Y%m%d-%H%M%S)"
+          set -euo pipefail
+
+          # 分支名按上游 commit 固定，避免每 6 小时堆积一个新的时间戳分支
+          BRANCH="sync-upstream/$UPSTREAM_SHORT"
+
+          if gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' | grep -q '[0-9]'; then
+            echo "ℹ️ 已存在针对 $UPSTREAM_SHORT 的开放 PR，跳过"
+            exit 0
+          fi
+
           git checkout -b "$BRANCH"
           git merge upstream/master --no-edit || true
 
-          # 标记冲突文件
           CONFLICTS=$(git diff --name-only --diff-filter=U)
           git add -A
-          git commit -m "chore: merge upstream (conflicts need manual resolve)" --no-verify || true
-          git push origin "$BRANCH"
+          git commit -m "chore: merge upstream $UPSTREAM_SHORT (conflicts need manual resolve)" --no-verify
+          git push --force-with-lease origin "$BRANCH"
+
+          # 用文件传 body，避免 git log 输出里的反引号被 shell 当成命令替换
+          {
+            echo "## 上游同步"
+            echo
+            echo "上游有新提交需要合并，但存在冲突。**本 PR 的冲突文件里带有 \`<<<<<<<\` 冲突标记，必须先手动解决再合并。**"
+            echo
+            echo "**上游 commit:** \`$UPSTREAM_SHORT\`"
+            echo
+            echo "### 冲突文件"
+            echo '```'
+            echo "$CONFLICTS"
+            echo '```'
+            echo
+            echo "### 新提交"
+            echo '```'
+            git log --oneline "$MERGE_BASE".."$UPSTREAM"
+            echo '```'
+            echo
+            echo "### 解决方式"
+            echo '```bash'
+            echo "git fetch origin && git checkout $BRANCH"
+            echo "# 编辑冲突文件，删除冲突标记"
+            echo "git add -A && git commit --amend --no-edit && git push --force-with-lease"
+            echo '```'
+            echo
+            echo "> 解决冲突后合并此 PR，会自动触发 Docker 镜像构建。"
+          } > /tmp/pr-body.md
 
           gh pr create \
-            --title "🔄 Sync upstream: $(git rev-parse --short upstream/master)" \
-            --body "$(cat <<EOF
-          ## 上游同步
-
-          上游仓库有新的提交需要合并，但存在冲突需要手动解决。
-
-          **上游 commit:** \`$(git rev-parse --short upstream/master)\`
-
-          ### 冲突文件
-          \`\`\`
-          $CONFLICTS
-          \`\`\`
-
-          ### 新提交
-          $(git log --oneline ${{ steps.check.outputs.merge_base }}..${{ steps.check.outputs.upstream }})
-
-          > 解决冲突后合并此 PR，会自动触发 Docker 镜像构建。
-          EOF
-          )" \
+            --title "🔄 Sync upstream: $UPSTREAM_SHORT" \
+            --body-file /tmp/pr-body.md \
             --base master \
             --head "$BRANCH"
