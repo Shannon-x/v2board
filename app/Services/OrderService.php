@@ -38,10 +38,9 @@ class OrderService
                 DB::rollBack();
                 abort(500, '充值失败');
             }
-            $order->status = 3;
-            if (!$order->save()) {
+            if (!Order::where('id', $order->id)->where('status', 1)->update(['status' => 3])) {
                 DB::rollBack();
-                abort(500, '充值失败');
+                return;
             }
             DB::commit();
             return;
@@ -92,10 +91,9 @@ class OrderService
             DB::rollBack();
             abort(500, '开通失败');
         }
-        $order->status = 3;
-        if (!$order->save()) {
+        if (!Order::where('id', $order->id)->where('status', 1)->update(['status' => 3])) {
             DB::rollBack();
-            abort(500, '开通失败');
+            return;
         }
 
         DB::commit();
@@ -274,8 +272,13 @@ class OrderService
     {
         $order = $this->order;
         DB::beginTransaction();
-        $order->status = 2;
-        if (!$order->save()) {
+        $affected = Order::where('id', $order->id)
+            ->where('status', 0)
+            ->update([
+                'status' => 2
+            ]);
+
+        if ($affected !== 1) {
             DB::rollBack();
             return false;
         }
