@@ -36,11 +36,16 @@ cd v2board
 cp .env.example .env
 ```
 
+<<<<<<< HEAD
 编辑 `.env`，至少修改以下配置（`APP_KEY` 留空即可，首次启动自动生成）：
 
 ```ini
 # 站点地址（改为你的实际域名）
 APP_URL=https://your-domain.com
+=======
+## Document
+[Click](https://v2board.com)
+>>>>>>> upstream/master
 
 # 数据库
 DB_HOST=your-mysql-host
