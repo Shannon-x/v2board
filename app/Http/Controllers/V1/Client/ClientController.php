@@ -3,10 +3,13 @@
 namespace App\Http\Controllers\V1\Client;
 
 use App\Http\Controllers\Controller;
+use App\Protocols\Clash;
+use App\Protocols\ClashMeta;
+use App\Protocols\ClashNyanpasu;
+use App\Protocols\ClashVerge;
 use App\Protocols\General;
 use App\Protocols\Singbox\Singbox;
 use App\Protocols\Singbox\SingboxOld;
-use App\Protocols\ClashMeta;
 use App\Services\ServerService;
 use App\Services\UserService;
 use App\Utils\Helper;
@@ -25,32 +28,68 @@ class ClientController extends Controller
         if ($userService->isAvailable($user)) {
             $serverService = new ServerService();
             $servers = $serverService->getAvailableServers($user);
-            if($flag) {
+            $protocol = null;
+            if ($flag) {
                 if (!strpos($flag, 'sing')) {
                     $this->setSubscribeInfoToServers($servers, $user);
                     foreach (array_reverse(glob(app_path('Protocols') . '/*.php')) as $file) {
                         $file = 'App\\Protocols\\' . basename($file, '.php');
-                        $class = new $file($user, $servers);
-                        if (strpos($flag, $class->flag) !== false) {
-                            return $class->handle();
+                        if (strpos($flag, get_class_vars($file)['flag']) !== false) {
+                            $protocol = $file;
+                            break;
                         }
                     }
                 }
-                if (strpos($flag, 'sing') !== false) {
+                if ($protocol === null && strpos($flag, 'sing') !== false) {
                     $version = null;
                     if (preg_match('/sing-box\s+([0-9.]+)/i', $flag, $matches)) {
                         $version = $matches[1];
                     }
                     if (!is_null($version) && $version >= '1.12.0') {
-                        $class = new Singbox($user, $servers);
+                        $protocol = Singbox::class;
                     } else {
-                        $class = new SingboxOld($user, $servers);
+                        $protocol = SingboxOld::class;
                     }
-                    return $class->handle();
                 }
             }
-            $class = new General($user, $servers);
-            return $class->handle();
+
+            $allowInsecureWithoutPin = in_array($protocol, [
+                Clash::class, ClashMeta::class, ClashNyanpasu::class, ClashVerge::class,
+                Singbox::class, SingboxOld::class,
+            ], true);
+            foreach ($servers as $key => $server) {
+                $type = $server['type'] === 'v2node' ? $server['protocol'] : $server['type'];
+                if ($type === 'shadowsocks' || (int)($server['tls'] ?? 1) !== 1) {
+                    continue;
+                }
+
+                $tlsSettings = $server['tls_settings'] ?? $server['tlsSettings'] ?? [];
+                $pcs = $tlsSettings['pinned_peer_cert_sha256'] ?? '';
+                $hasPin = is_string($pcs) && trim($pcs) !== '';
+                $remoteTls = $server['type'] === 'v2node' && ($tlsSettings['cert_mode'] ?? null) === 'remote';
+                if (!$hasPin && !($allowInsecureWithoutPin && $remoteTls)) {
+                    continue;
+                }
+
+                $fingerprint = Helper::getTlsCertificateFingerprint($server);
+                if ($fingerprint !== null) {
+                    $tlsSettings['pinned_peer_cert_sha256'] = $fingerprint;
+                }
+                // Keep self-signed nodes usable on clients without certificate pinning.
+                $tlsSettings['allow_insecure'] = 1;
+                if ($type === 'vmess') {
+                    $tlsSettings['allowInsecure'] = 1;
+                }
+                $servers[$key]['tls_settings'] = $tlsSettings;
+                foreach (['allow_insecure', 'insecure'] as $flagName) {
+                    if (array_key_exists($flagName, $server)) {
+                        $servers[$key][$flagName] = 1;
+                    }
+                }
+            }
+
+            $protocol = $protocol ?? General::class;
+            return (new $protocol($user, $servers))->handle();
         }
     }
 
