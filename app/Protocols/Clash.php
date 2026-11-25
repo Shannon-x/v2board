@@ -59,6 +59,10 @@ class Clash
                 array_push($proxy, self::buildTrojan($user['uuid'], $item));
                 array_push($proxies, $item['name']);
             }
+            if ($item['type'] === 'anytls') {
+                array_push($proxy, self::buildAnyTLS($user['uuid'], $item));
+                array_push($proxies, $item['name']);
+            }
         }
 
         $config['proxies'] = array_merge($config['proxies'] ? $config['proxies'] : [], $proxy);
@@ -172,7 +176,7 @@ class Clash
             if (isset($grpcSettings['serviceName'])) $array['grpc-opts']['grpc-service-name'] = $grpcSettings['serviceName'];
         }
 
-        return $array;
+        return ClashMeta::withCertificateFingerprint($array, $server);
     }
 
     public static function buildTrojan($password, $server)
@@ -202,7 +206,38 @@ class Clash
         };
         $array['sni'] = $server['server_name'] ?? (($server['tls_settings'] ?? [])['server_name'] ?? '');
         $array['skip-cert-verify'] = ((int)(($server['tls_settings'] ?? [])['allow_insecure'] ?? ($server['allow_insecure'] ?? 0))) == 1 ? true : false;
-        return $array;
+        return ClashMeta::withCertificateFingerprint($array, $server);
+    }
+
+    public static function buildAnyTLS($password, $server)
+    {
+        $array = [];
+        $array['name'] = $server['name'];
+        $array['type'] = 'anytls';
+        $array['server'] = $server['host'];
+        $array['port'] = (int) $server['port'];
+        $array['password'] = $password;
+        $array['udp'] = true;
+
+        $tlsSettings = $server['tls_settings'] ?? $server['tlsSettings'] ?? [];
+
+        $serverName = $server['server_name']
+            ?? $tlsSettings['server_name']
+            ?? $tlsSettings['serverName']
+            ?? '';
+
+        if ($serverName !== '') {
+            $array['sni'] = $serverName;
+        }
+
+        $allowInsecure = $tlsSettings['allow_insecure']
+            ?? $tlsSettings['allowInsecure']
+            ?? $server['allow_insecure']
+            ?? 0;
+
+        $array['skip-cert-verify'] = (int) $allowInsecure === 1;
+
+        return ClashMeta::withCertificateFingerprint($array, $server);
     }
 
     private function isMatch($exp, $str)
